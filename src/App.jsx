@@ -44,6 +44,24 @@ const supabase = {
     if (data.error) throw new Error(data.error_description || data.msg || "Login failed");
     this.token = data.access_token;
     this.user = data.user;
+    localStorage.setItem("af_session", JSON.stringify({ access_token: data.access_token, refresh_token: data.refresh_token, user: data.user }));
+    return data;
+  },
+
+  async auth_refreshSession() {
+    const saved = localStorage.getItem("af_session");
+    if (!saved) return null;
+    const session = JSON.parse(saved);
+    if (!session.refresh_token) return null;
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: this.headers(),
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    const data = await res.json();
+    if (data.error || !data.access_token) { localStorage.removeItem("af_session"); return null; }
+    this.token = data.access_token;
+    this.user = data.user;
+    localStorage.setItem("af_session", JSON.stringify({ access_token: data.access_token, refresh_token: data.refresh_token, user: data.user }));
     return data;
   },
 
@@ -52,6 +70,7 @@ const supabase = {
       await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: this.headers() });
     }
     this.token = null; this.user = null;
+    localStorage.removeItem("af_session");
   },
 
   async query(table, { select = "*", filters = [], order, limit, single = false } = {}) {
@@ -349,6 +368,7 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [workSettings, setWorkSettings] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(true);
 
   const toast = useCallback((message, type = "info") => {
     const id = Date.now();
@@ -356,6 +376,21 @@ export default function App() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
   }, []);
   const removeToast = (id) => setToasts(t => t.filter(x => x.id !== id));
+
+  // Restore session on app load
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await supabase.auth_refreshSession();
+        if (data) {
+          const prof = await supabase.query("profiles", { filters: [`id=eq.${data.user.id}`], single: true });
+          setUser(data.user);
+          setProfile(prof);
+        }
+      } catch (err) { console.error("Session restore failed:", err); }
+      setRestoring(false);
+    })();
+  }, []);
 
   const canEdit = profile?.role === "super_admin" || profile?.role === "admin";
   const isSuperAdmin = profile?.role === "super_admin";
@@ -409,6 +444,17 @@ export default function App() {
     await supabase.auth_signOut();
     setUser(null); setProfile(null); setPage("dashboard");
   };
+
+  if (restoring) return (
+    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+      <div className="text-center">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/25 mb-4 animate-pulse">
+          <Building2 size={28} className="text-white" />
+        </div>
+        <p className="text-gray-500 text-sm">Loading...</p>
+      </div>
+    </div>
+  );
 
   if (!user) return <><LoginPage onLogin={handleLogin} toast={toast} /><ToastContext toasts={toasts} removeToast={removeToast} /></>;
 
@@ -714,6 +760,7 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
   };
 
   const handleExport = () => {
+    if (!filtered.length) { toast("No employee data to export.", "error"); return; }
     const ws = XLSX.utils.json_to_sheet(filtered.map(e => ({
       "Employee Code": e.employee_code, Name: e.name, Email: e.email, Phone: e.phone,
       Department: e.department, Designation: e.designation, "Base Salary": e.base_salary, Status: e.status
@@ -1191,6 +1238,7 @@ const SalaryPage = ({ employees, salaryRecords, setSalaryRecords, workSettings, 
   };
 
   const handleExport = () => {
+    if (!filtered.length) { toast("No salary data to export.", "error"); return; }
     const ws = XLSX.utils.json_to_sheet(filtered.map(s => {
       const emp = employees.find(e => e.id === s.employee_id);
       return {
