@@ -784,7 +784,14 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
 
       {/* Import Modal */}
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onImport={handleImport} title="Import Employees"
-        hint="Excel should have columns: Employee Code, Name, Email, Phone, Department, Designation, Salary" />
+        hint="Excel should have columns: Employee Code, Name, Email, Phone, Department, Designation, Salary, Date of Joining"
+        templateData={{
+          fileName: "employee_import_template.xlsx",
+          rows: [
+            { "Employee Code": "EMP001", "Name": "John Doe", "Email": "john@example.com", "Phone": "9876543210", "Department": "Design", "Designation": "Designer", "Salary": 25000, "Date of Joining": "2025-01-15" },
+            { "Employee Code": "EMP002", "Name": "Jane Smith", "Email": "jane@example.com", "Phone": "9876543211", "Department": "Production", "Designation": "Tailor", "Salary": 20000, "Date of Joining": "2025-03-01" },
+          ]
+        }} />
 
       {/* Delete Confirm */}
       <ConfirmDialog open={!!delEmp} onClose={() => setDelEmp(null)} onConfirm={() => handleDelete(delEmp)}
@@ -824,15 +831,30 @@ const EmployeeForm = ({ open, onClose, employee, onSave }) => {
 };
 
 // ─── IMPORT MODAL ─────────────────────────────
-const ImportModal = ({ open, onClose, onImport, title, hint }) => {
+const ImportModal = ({ open, onClose, onImport, title, hint, templateData }) => {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const ref = useRef();
 
   const handleDrop = (e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
 
+  const handleDownloadTemplate = () => {
+    if (!templateData) return;
+    const ws = XLSX.utils.json_to_sheet(templateData.rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, templateData.fileName || "template.xlsx");
+  };
+
   return (
     <Modal open={open} onClose={onClose} title={title}>
+      {templateData && (
+        <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+          <FileSpreadsheet size={18} className="text-cyan-400 shrink-0" />
+          <p className="text-xs text-gray-400 flex-1">Not sure about the format? Download the template, fill it in, and upload.</p>
+          <Btn variant="ghost" size="sm" icon={Download} onClick={handleDownloadTemplate}>Template</Btn>
+        </div>
+      )}
       <div className={cn("border-2 border-dashed rounded-2xl p-8 text-center transition-colors cursor-pointer", dragging ? "border-cyan-500 bg-cyan-500/5" : "border-white/10 hover:border-white/20")}
         onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={handleDrop} onClick={() => ref.current?.click()}>
         <Upload size={32} className="mx-auto text-gray-600 mb-3" />
@@ -1018,7 +1040,15 @@ const AttendancePage = ({ employees, attendance, setAttendance, canEdit, toast, 
       </Card>
 
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onImport={handleImport} title="Import Attendance"
-        hint="Excel columns: Employee Code, Date (YYYY-MM-DD), Check In (HH:MM), Check Out (HH:MM), Status (present/absent/half_day/leave)" />
+        hint="Excel columns: Employee Code, Date (YYYY-MM-DD), Check In (HH:MM), Check Out (HH:MM), Status (present/absent/half_day/leave)"
+        templateData={{
+          fileName: "attendance_import_template.xlsx",
+          rows: [
+            { "Employee Code": "EMP001", "Date": "2026-04-01", "Check In": "09:00", "Check Out": "18:00", "Status": "present" },
+            { "Employee Code": "EMP001", "Date": "2026-04-02", "Check In": "09:00", "Check Out": "13:00", "Status": "half_day" },
+            { "Employee Code": "EMP002", "Date": "2026-04-01", "Check In": "", "Check Out": "", "Status": "absent" },
+          ]
+        }} />
 
       <ManualAttendanceModal open={showManual} onClose={() => setShowManual(false)} employees={employees} onSave={handleManualSave} />
     </div>
