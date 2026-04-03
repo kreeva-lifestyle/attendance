@@ -545,7 +545,7 @@ export default function App() {
         <div className="flex-1 p-4 lg:p-6 overflow-y-auto">
           {page === "dashboard" && <DashboardPage employees={employees} attendance={attendance} salaryRecords={salaryRecords} loadAttendance={loadAttendance} loadSalaryRecords={loadSalaryRecords} />}
           {page === "employees" && <EmployeesPage employees={employees} setEmployees={setEmployees} canEdit={canEdit} isSuperAdmin={isSuperAdmin} toast={toast} loadData={loadData} />}
-          {page === "attendance" && <AttendancePage employees={employees} attendance={attendance} setAttendance={setAttendance} canEdit={canEdit} toast={toast} loadAttendance={loadAttendance} />}
+          {page === "attendance" && <AttendancePage employees={employees} attendance={attendance} setAttendance={setAttendance} canEdit={canEdit} toast={toast} loadAttendance={loadAttendance} workSettings={workSettings} loadSalaryRecords={loadSalaryRecords} loadData={loadData} />}
           {page === "salary" && <SalaryPage employees={employees} salaryRecords={salaryRecords} setSalaryRecords={setSalaryRecords} workSettings={workSettings} canEdit={canEdit} isSuperAdmin={isSuperAdmin} toast={toast} loadSalaryRecords={loadSalaryRecords} loadData={loadData} />}
           {page === "notifications" && <NotificationsPage notifications={notifications} setNotifications={setNotifications} toast={toast} />}
           {page === "settings" && <SettingsPage workSettings={workSettings} setWorkSettings={setWorkSettings} profile={profile} canEdit={canEdit} isSuperAdmin={isSuperAdmin} toast={toast} loadData={loadData} />}
@@ -687,6 +687,9 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
   const [showImport, setShowImport] = useState(false);
   const [editEmp, setEditEmp] = useState(null);
   const [delEmp, setDelEmp] = useState(null);
+  const [historyEmp, setHistoryEmp] = useState(null);
+  const [salaryHistory, setSalaryHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const departments = [...new Set(employees.map(e => e.department).filter(Boolean))];
 
@@ -739,6 +742,7 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
         department: String(r["Department"] || r["Dept"] || r["department"] || "").trim() || null,
         designation: String(r["Designation"] || r["Position"] || r["Role"] || r["designation"] || "").trim() || null,
         base_salary: parseFloat(r["Salary"] || r["Base Salary"] || r["base_salary"] || 0),
+        shift_hours: parseFloat(r["Shift Hours"] || r["Work Hours"] || r["shift_hours"] || 8),
         date_of_joining: r["Date of Joining"] || r["DOJ"] || r["date_of_joining"] || null,
         status: "active"
       })).filter(r => r.employee_code && r.name);
@@ -763,11 +767,23 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
     if (!filtered.length) { toast("No employee data to export.", "error"); return; }
     const ws = XLSX.utils.json_to_sheet(filtered.map(e => ({
       "Employee Code": e.employee_code, Name: e.name, Email: e.email, Phone: e.phone,
-      Department: e.department, Designation: e.designation, "Base Salary": e.base_salary, Status: e.status
+      Department: e.department, Designation: e.designation, "Base Salary": e.base_salary, "Shift Hours": e.shift_hours || 8, Status: e.status
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Employees");
     XLSX.writeFile(wb, "employees.xlsx");
+  };
+
+  const viewSalaryHistory = async (emp) => {
+    setHistoryEmp(emp);
+    setLoadingHistory(true);
+    try {
+      const records = await supabase.query("att_salary_records", {
+        filters: [`employee_id=eq.${emp.id}`], order: "year.desc,month.desc"
+      });
+      setSalaryHistory(records || []);
+    } catch (err) { toast("Failed to load salary history", "error"); }
+    setLoadingHistory(false);
   };
 
   return (
@@ -790,13 +806,13 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-white/[0.02]">
-              {["Code","Name","Department","Designation","Salary","Status",""].map(h => (
+              {["Code","Name","Department","Designation","Salary","Shift","Status",""].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-gray-500 font-medium text-xs uppercase tracking-wider">{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7}><EmptyState icon={Users} title="No employees" subtitle="Add employees or import from Excel" /></td></tr>
+                <tr><td colSpan={8}><EmptyState icon={Users} title="No employees" subtitle="Add employees or import from Excel" /></td></tr>
               ) : filtered.map(e => (
                 <tr key={e.id} className="border-t border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-3 text-gray-400 font-mono text-xs">{e.employee_code}</td>
@@ -809,9 +825,11 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
                   <td className="px-4 py-3 text-gray-400">{e.department || "—"}</td>
                   <td className="px-4 py-3 text-gray-400">{e.designation || "—"}</td>
                   <td className="px-4 py-3 text-gray-300 font-medium">{fmt(e.base_salary)}</td>
+                  <td className="px-4 py-3 text-gray-400">{e.shift_hours || 8}h</td>
                   <td className="px-4 py-3"><Badge color={e.status}>{e.status}</Badge></td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
+                      <button onClick={() => viewSalaryHistory(e)} className="p-1.5 hover:bg-cyan-500/10 rounded-lg" title="Salary History"><Clock size={14} className="text-gray-500 hover:text-cyan-400" /></button>
                       {canEdit && <button onClick={() => setEditEmp(e)} className="p-1.5 hover:bg-white/5 rounded-lg"><Edit size={14} className="text-gray-500" /></button>}
                       {isSuperAdmin && <button onClick={() => setDelEmp(e)} className="p-1.5 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} className="text-gray-500 hover:text-red-400" /></button>}
                     </div>
@@ -831,18 +849,118 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
 
       {/* Import Modal */}
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onImport={handleImport} title="Import Employees"
-        hint="Excel should have columns: Employee Code, Name, Email, Phone, Department, Designation, Salary, Date of Joining"
+        hint="Excel should have columns: Employee Code, Name, Email, Phone, Department, Designation, Salary, Shift Hours, Date of Joining"
         templateData={{
           fileName: "employee_import_template.xlsx",
           rows: [
-            { "Employee Code": "EMP001", "Name": "John Doe", "Email": "john@example.com", "Phone": "9876543210", "Department": "Design", "Designation": "Designer", "Salary": 25000, "Date of Joining": "2025-01-15" },
-            { "Employee Code": "EMP002", "Name": "Jane Smith", "Email": "jane@example.com", "Phone": "9876543211", "Department": "Production", "Designation": "Tailor", "Salary": 20000, "Date of Joining": "2025-03-01" },
+            { "Employee Code": "EMP001", "Name": "John Doe", "Email": "john@example.com", "Phone": "9876543210", "Department": "Design", "Designation": "Designer", "Salary": 25000, "Shift Hours": 8, "Date of Joining": "2025-01-15" },
+            { "Employee Code": "EMP002", "Name": "Jane Smith", "Email": "jane@example.com", "Phone": "9876543211", "Department": "Production", "Designation": "Tailor", "Salary": 20000, "Shift Hours": 9, "Date of Joining": "2025-03-01" },
           ]
         }} />
 
       {/* Delete Confirm */}
       <ConfirmDialog open={!!delEmp} onClose={() => setDelEmp(null)} onConfirm={() => handleDelete(delEmp)}
         title="Delete Employee" message={`Are you sure you want to delete "${delEmp?.name}"? This will also remove all their attendance and salary records.`} />
+
+      {/* Salary History Modal */}
+      <Modal open={!!historyEmp} onClose={() => { setHistoryEmp(null); setSalaryHistory([]); }} title={`Salary History — ${historyEmp?.name || ""}`} wide>
+        {historyEmp && (
+          <div className="space-y-4">
+            {/* Employee Summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-white/[0.02] rounded-xl">
+                <p className="text-xs text-gray-500">Current Salary</p>
+                <p className="text-white font-semibold">{fmt(historyEmp.base_salary)}</p>
+              </div>
+              <div className="p-3 bg-white/[0.02] rounded-xl">
+                <p className="text-xs text-gray-500">Shift Hours</p>
+                <p className="text-white font-semibold">{historyEmp.shift_hours || 8}h/day</p>
+              </div>
+              <div className="p-3 bg-white/[0.02] rounded-xl">
+                <p className="text-xs text-gray-500">Department</p>
+                <p className="text-white font-semibold">{historyEmp.department || "—"}</p>
+              </div>
+              <div className="p-3 bg-white/[0.02] rounded-xl">
+                <p className="text-xs text-gray-500">Total Records</p>
+                <p className="text-white font-semibold">{salaryHistory.length}</p>
+              </div>
+            </div>
+
+            {/* Salary Trend */}
+            {salaryHistory.length > 1 && (() => {
+              const sorted = [...salaryHistory].sort((a, b) => a.year - b.year || a.month - b.month);
+              const raises = [];
+              for (let i = 1; i < sorted.length; i++) {
+                if (sorted[i].base_salary !== sorted[i - 1].base_salary) {
+                  raises.push({
+                    month: `${MONTHS[sorted[i].month - 1]} ${sorted[i].year}`,
+                    from: sorted[i - 1].base_salary,
+                    to: sorted[i].base_salary,
+                    change: sorted[i].base_salary - sorted[i - 1].base_salary
+                  });
+                }
+              }
+              return raises.length > 0 && (
+                <div className="p-4 bg-white/[0.02] rounded-xl">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-3 font-medium">Salary Changes</p>
+                  <div className="space-y-2">
+                    {raises.map((r, i) => (
+                      <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-sm p-2 rounded-lg bg-white/[0.02]">
+                        <span className="text-gray-400">{r.month}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500">{fmt(r.from)}</span>
+                          <ChevronRight size={14} className="text-gray-600" />
+                          <span className="text-white font-medium">{fmt(r.to)}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${r.change > 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                            {r.change > 0 ? "+" : ""}{fmt(r.change)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Monthly Records */}
+            {loadingHistory ? (
+              <p className="text-gray-500 text-center py-8">Loading...</p>
+            ) : salaryHistory.length === 0 ? (
+              <EmptyState icon={DollarSign} title="No salary records" subtitle="Salary will appear here once attendance is imported" />
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-white/[0.05]">
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-white/[0.02]">
+                    {["Month","Base","Days (P/A/H)","Hours","Earned","OT Pay","Net","Status"].map(h => (
+                      <th key={h} className="text-left px-3 py-2.5 text-gray-500 font-medium text-xs uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {salaryHistory.map(s => (
+                      <tr key={s.id} className="border-t border-white/[0.03]">
+                        <td className="px-3 py-2.5 text-white text-xs font-medium">{MONTHS[s.month - 1]} {s.year}</td>
+                        <td className="px-3 py-2.5 text-gray-400 text-xs">{fmt(s.base_salary)}</td>
+                        <td className="px-3 py-2.5 text-xs">
+                          <span className="text-emerald-400">{s.days_present}</span>/<span className="text-red-400">{s.days_absent}</span>/<span className="text-amber-400">{s.days_half_day}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-400 text-xs">{s.total_hours_worked}h</td>
+                        <td className="px-3 py-2.5 text-gray-300 text-xs">{fmt(s.earned_salary)}</td>
+                        <td className="px-3 py-2.5 text-cyan-400 text-xs">{s.overtime_pay > 0 ? fmt(s.overtime_pay) : "—"}</td>
+                        <td className="px-3 py-2.5 text-white font-semibold text-xs">{fmt(s.net_salary)}</td>
+                        <td className="px-3 py-2.5"><Badge color={s.status}>{s.status}</Badge></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Btn variant="secondary" onClick={() => { setHistoryEmp(null); setSalaryHistory([]); }}>Close</Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
@@ -851,7 +969,7 @@ const EmployeesPage = ({ employees, setEmployees, canEdit, isSuperAdmin, toast, 
 const EmployeeForm = ({ open, onClose, employee, onSave }) => {
   const [form, setForm] = useState({});
   useEffect(() => {
-    setForm(employee || { employee_code: "", name: "", email: "", phone: "", department: "", designation: "", base_salary: 0, status: "active" });
+    setForm(employee || { employee_code: "", name: "", email: "", phone: "", department: "", designation: "", base_salary: 0, shift_hours: 8, status: "active" });
   }, [employee, open]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -866,6 +984,7 @@ const EmployeeForm = ({ open, onClose, employee, onSave }) => {
         <Input label="Department" placeholder="Design" value={form.department || ""} onChange={e => set("department", e.target.value)} />
         <Input label="Designation" placeholder="Designer" value={form.designation || ""} onChange={e => set("designation", e.target.value)} />
         <Input label="Base Salary (₹)" type="number" placeholder="25000" value={form.base_salary || ""} onChange={e => set("base_salary", parseFloat(e.target.value) || 0)} />
+        <Input label="Shift Hours" type="number" placeholder="8" value={form.shift_hours ?? ""} onChange={e => set("shift_hours", parseFloat(e.target.value) || 0)} />
         <Input label="Date of Joining" type="date" value={form.date_of_joining || ""} onChange={e => set("date_of_joining", e.target.value)} />
         <Select label="Status" options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} value={form.status || "active"} onChange={e => set("status", e.target.value)} />
       </div>
@@ -919,15 +1038,78 @@ const ImportModal = ({ open, onClose, onImport, title, hint, templateData }) => 
 };
 
 // ─── ATTENDANCE PAGE ─────────────────────────────
-const AttendancePage = ({ employees, attendance, setAttendance, canEdit, toast, loadAttendance }) => {
+const AttendancePage = ({ employees, attendance, setAttendance, canEdit, toast, loadAttendance, workSettings, loadSalaryRecords, loadData }) => {
   const now = new Date();
   const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
   const [selYear, setSelYear] = useState(now.getFullYear());
   const [search, setSearch] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [autoCalcing, setAutoCalcing] = useState(false);
 
   useEffect(() => { loadAttendance(selMonth, selYear); }, [selMonth, selYear]);
+
+  const autoCalculateSalary = async (month, year) => {
+    setAutoCalcing(true);
+    try {
+      const activeEmps = employees.filter(e => e.status === "active");
+      const ws = workSettings.find(w => w.month === month && w.year === year);
+      const workingDays = ws?.total_working_days || 26;
+      const globalWorkHrs = ws?.work_hours_per_day || 8;
+      const overtimeRate = ws?.overtime_rate || 1.5;
+
+      const startDate = `${year}-${String(month).padStart(2,"0")}-01`;
+      const endMonth = month === 12 ? 1 : month + 1;
+      const endYear = month === 12 ? year + 1 : year;
+      const endDate = `${endYear}-${String(endMonth).padStart(2,"0")}-01`;
+
+      const attData = await supabase.query("att_attendance", {
+        filters: [`date=gte.${startDate}`, `date=lt.${endDate}`], order: "date.asc"
+      });
+
+      const attMap = {};
+      (attData || []).forEach(a => {
+        if (!attMap[a.employee_id]) attMap[a.employee_id] = [];
+        attMap[a.employee_id].push(a);
+      });
+
+      const records = activeEmps.filter(emp => attMap[emp.id]?.length > 0).map(emp => {
+        const empAtt = attMap[emp.id];
+        const daysPresent = empAtt.filter(a => a.status === "present").length;
+        const daysAbsent = empAtt.filter(a => a.status === "absent").length;
+        const daysHalfDay = empAtt.filter(a => a.status === "half_day").length;
+        const daysLeave = empAtt.filter(a => a.status === "leave").length;
+        const totalHours = empAtt.reduce((s, a) => s + (parseFloat(a.total_hours) || 0), 0);
+
+        const empShiftHrs = parseFloat(emp.shift_hours) || globalWorkHrs;
+        const perDaySalary = parseFloat(emp.base_salary) / workingDays;
+        const effectiveDays = daysPresent + (daysHalfDay * 0.5) + daysLeave;
+        const earnedSalary = perDaySalary * effectiveDays;
+        const expectedHours = effectiveDays * empShiftHrs;
+        const overtimeHours = Math.max(0, totalHours - expectedHours);
+        const overtimePay = overtimeHours * (perDaySalary / empShiftHrs) * overtimeRate;
+        const netSalary = earnedSalary + overtimePay;
+
+        return {
+          employee_id: emp.id, month, year,
+          base_salary: parseFloat(emp.base_salary), days_present: daysPresent, days_absent: daysAbsent,
+          days_half_day: daysHalfDay, days_leave: daysLeave, total_hours_worked: Math.round(totalHours * 100) / 100,
+          overtime_hours: Math.round(overtimeHours * 100) / 100, per_day_salary: Math.round(perDaySalary * 100) / 100,
+          earned_salary: Math.round(earnedSalary * 100) / 100, overtime_pay: Math.round(overtimePay * 100) / 100,
+          deductions: 0, bonus: 0, net_salary: Math.round(netSalary * 100) / 100,
+          status: "calculated", calculated_at: new Date().toISOString()
+        };
+      });
+
+      if (records.length > 0) {
+        await supabase.upsert("att_salary_records", records);
+        toast(`Salary auto-calculated for ${records.length} employees!`, "success");
+        loadSalaryRecords(month, year);
+        loadData();
+      }
+    } catch (err) { console.error("Auto salary calc failed:", err); }
+    setAutoCalcing(false);
+  };
 
   const empAttendance = useMemo(() => {
     const map = {};
@@ -990,6 +1172,17 @@ const AttendancePage = ({ employees, attendance, setAttendance, canEdit, toast, 
       toast(`Imported ${records.length} attendance records!`, "success");
       loadAttendance(selMonth, selYear);
       setShowImport(false);
+
+      // Detect which months are affected and auto-calculate salary
+      const affectedMonths = new Set();
+      records.forEach(r => {
+        const d = new Date(r.date);
+        affectedMonths.add(`${d.getMonth() + 1}-${d.getFullYear()}`);
+      });
+      for (const key of affectedMonths) {
+        const [m, y] = key.split("-").map(Number);
+        await autoCalculateSalary(m, y);
+      }
     } catch (err) { toast(`Import failed: ${err.message}`, "error"); }
   };
 
@@ -1145,7 +1338,7 @@ const SalaryPage = ({ employees, salaryRecords, setSalaryRecords, workSettings, 
       const activeEmps = employees.filter(e => e.status === "active");
       const ws = workSettings.find(w => w.month === selMonth && w.year === selYear);
       const workingDays = ws?.total_working_days || 26;
-      const workHrsPerDay = ws?.work_hours_per_day || 8;
+      const globalWorkHrs = ws?.work_hours_per_day || 8;
       const overtimeRate = ws?.overtime_rate || 1.5;
 
       const startDate = `${selYear}-${String(selMonth).padStart(2,"0")}-01`;
@@ -1171,12 +1364,13 @@ const SalaryPage = ({ employees, salaryRecords, setSalaryRecords, workSettings, 
         const daysLeave = empAtt.filter(a => a.status === "leave").length;
         const totalHours = empAtt.reduce((s, a) => s + (parseFloat(a.total_hours) || 0), 0);
 
+        const empShiftHrs = parseFloat(emp.shift_hours) || globalWorkHrs;
         const perDaySalary = parseFloat(emp.base_salary) / workingDays;
         const effectiveDays = daysPresent + (daysHalfDay * 0.5) + daysLeave;
         const earnedSalary = perDaySalary * effectiveDays;
-        const expectedHours = effectiveDays * workHrsPerDay;
+        const expectedHours = effectiveDays * empShiftHrs;
         const overtimeHours = Math.max(0, totalHours - expectedHours);
-        const overtimePay = overtimeHours * (perDaySalary / workHrsPerDay) * overtimeRate;
+        const overtimePay = overtimeHours * (perDaySalary / empShiftHrs) * overtimeRate;
         const netSalary = earnedSalary + overtimePay;
 
         return {
